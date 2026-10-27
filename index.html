@@ -1,0 +1,1282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Pizzeria Listening Quest - 3D ESL Adventure</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- FontAwesome CDN -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            user-select: none;
+            -webkit-user-select: none;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #1a0f0d;
+        }
+        #canvas-container {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+        #reticle {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 12px;
+            height: 12px;
+            border: 2px solid rgba(255, 255, 255, 0.8);
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 10;
+            transition: all 0.2s ease;
+        }
+        #reticle.active {
+            width: 20px;
+            height: 20px;
+            background-radius: 50%;
+            border-color: #f59e0b;
+            background-color: rgba(245, 158, 11, 0.3);
+        }
+        /* Virtual Controls for Mobile/Tablet */
+        .touch-zone {
+            position: absolute;
+            z-index: 20;
+            touch-action: none;
+        }
+        #joystick-zone {
+            bottom: 30px;
+            left: 30px;
+            width: 130px;
+            height: 130px;
+            background: rgba(255, 255, 255, 0.15);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        #joystick-knob {
+            width: 50px;
+            height: 50px;
+            background: rgba(245, 158, 11, 0.8);
+            border-radius: 50%;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            position: absolute;
+        }
+        #touch-look-zone {
+            top: 0;
+            right: 0;
+            width: 50%;
+            height: 100%;
+        }
+        /* Custom UI Glassmorphism */
+        .glass-panel {
+            background: rgba(20, 15, 10, 0.75);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 3D Canvas -->
+    <div id="canvas-container"></div>
+
+    <!-- Center Reticle -->
+    <div id="reticle"></div>
+
+    <!-- Touch Look Zone (Right Screen Drag) -->
+    <div id="touch-look-zone" class="touch-zone"></div>
+
+    <!-- Joystick Zone (Left Screen) -->
+    <div id="joystick-zone" class="touch-zone hidden md:hidden">
+        <div id="joystick-knob"></div>
+    </div>
+
+    <!-- Action Button (Mobile/Tablet) -->
+    <button id="action-btn" class="touch-zone hidden md:hidden bottom-8 right-8 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white font-bold py-4 px-6 rounded-full shadow-lg border-2 border-amber-300 flex items-center justify-center space-x-2 text-lg">
+        <i class="fa-solid fa-hand-pointer"></i>
+        <span id="action-btn-text">INTERACT</span>
+    </button>
+
+    <!-- Top Overlay HUD Header -->
+    <div class="absolute top-4 left-4 right-4 z-10 flex flex-wrap justify-between items-center gap-2 pointer-events-none">
+        <!-- Mission Objective Tracker -->
+        <div class="glass-panel text-white p-3 md:p-4 rounded-xl shadow-2xl flex items-center space-x-3 pointer-events-auto border-l-4 border-amber-500">
+            <div class="bg-amber-500/20 p-2 rounded-lg text-amber-400">
+                <i class="fa-solid fa-utensils text-xl md:text-2xl"></i>
+            </div>
+            <div>
+                <div class="text-xs text-amber-300 font-semibold uppercase tracking-wider">Current Objective</div>
+                <div id="objective-text" class="text-sm md:text-base font-bold text-gray-100">Walk to Customer Table to receive order.</div>
+            </div>
+        </div>
+
+        <!-- Status & Audio Controls -->
+        <div class="glass-panel text-white p-2 md:p-3 rounded-xl shadow-2xl flex items-center space-x-3 md:space-x-4 pointer-events-auto">
+            <!-- Difficulty Selector -->
+            <div class="flex items-center space-x-1 bg-black/40 p-1 rounded-lg border border-white/10 text-xs">
+                <label for="difficulty-select" class="text-gray-400 px-1"><i class="fa-solid fa-gauge-high"></i> Level:</label>
+                <select id="difficulty-select" class="bg-amber-900/60 text-amber-200 rounded px-2 py-1 focus:outline-none cursor-pointer border border-amber-500/30">
+                    <option value="beginner">Beginner (Slow + Subtitles)</option>
+                    <option value="intermediate" selected>Intermediate (Normal)</option>
+                    <option value="advanced">Advanced (Fast / Audio Only)</option>
+                </select>
+            </div>
+
+            <!-- Replay Voice Audio -->
+            <button id="replay-voice-btn" class="bg-amber-500/20 hover:bg-amber-500/40 text-amber-300 p-2 rounded-lg transition border border-amber-500/30 flex items-center space-x-1" title="Replay Voice Order">
+                <i class="fa-solid fa-volume-high text-lg"></i>
+                <span class="text-xs hidden sm:inline font-semibold">Replay Order</span>
+            </button>
+
+            <!-- Mute Background Music -->
+            <button id="toggle-music-btn" class="bg-gray-700/50 hover:bg-gray-600/50 text-gray-300 p-2 rounded-lg transition border border-white/10" title="Toggle Music">
+                <i id="music-icon" class="fa-solid fa-music"></i>
+            </button>
+
+            <!-- Score & Stars -->
+            <div class="flex items-center space-x-2 pl-2 border-l border-white/10">
+                <i class="fa-solid fa-star text-amber-400 text-lg"></i>
+                <span id="score-display" class="font-bold text-amber-300 text-lg">0</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Floating HUD Help Message / Interaction Prompt -->
+    <div id="interaction-prompt" class="absolute bottom-20 left-1/2 transform -translate-x-1/2 z-10 glass-panel text-amber-300 px-6 py-2 rounded-full font-bold shadow-xl border border-amber-500/50 hidden text-center pointer-events-none animate-pulse">
+        <i class="fa-solid fa-hand-point-up mr-2"></i><span id="prompt-text">Press E or Tap to Interact</span>
+    </div>
+
+    <!-- Subtitle Overlay (Controlled by Difficulty Settings) -->
+    <div id="subtitle-box" class="absolute bottom-6 left-1/2 transform -translate-x-1/2 z-10 glass-panel text-white px-6 py-3 rounded-xl max-w-xl text-center shadow-2xl border border-amber-500/30 hidden pointer-events-none">
+        <div class="text-xs text-amber-400 font-bold mb-1">CUSTOMER ORDER (AUDIO SUBTITLE):</div>
+        <div id="subtitle-text" class="text-sm md:text-base italic font-serif text-amber-100">"..."</div>
+    </div>
+
+    <!-- UI Modal Container: Listening Challenge Quiz & Step Modals -->
+    <div id="quiz-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md hidden p-4">
+        <div class="glass-panel text-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-amber-500/40 transform transition-all scale-100">
+            <!-- Modal Header -->
+            <div class="flex justify-between items-center border-b border-white/10 pb-3 mb-4">
+                <div class="flex items-center space-x-2 text-amber-400">
+                    <i class="fa-solid fa-clipboard-question text-2xl"></i>
+                    <h2 class="text-xl font-bold">ESL Listening Check Quiz</h2>
+                </div>
+                <button id="modal-replay-audio" class="text-xs bg-amber-500/30 hover:bg-amber-500/50 text-amber-300 px-3 py-1.5 rounded-lg border border-amber-500/40 flex items-center space-x-1">
+                    <i class="fa-solid fa-volume-high"></i>
+                    <span>Listen Again</span>
+                </button>
+            </div>
+
+            <!-- Quiz Questions Container -->
+            <div id="quiz-questions-container" class="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
+                <!-- Questions injected dynamically -->
+            </div>
+
+            <!-- Submit Button -->
+            <button id="submit-quiz-btn" class="mt-6 w-full bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white font-bold py-3 rounded-xl shadow-lg border border-amber-400 transition transform active:scale-98">
+                Submit Customer Order & Check Results
+            </button>
+        </div>
+    </div>
+
+    <!-- Level Complete Celebration Modal -->
+    <div id="victory-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md hidden p-4">
+        <div class="glass-panel text-white rounded-2xl max-w-md w-full p-6 text-center shadow-2xl border-2 border-amber-400">
+            <div class="text-5xl text-amber-400 mb-2 animate-bounce">
+                <i class="fa-solid fa-award"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-amber-300 mb-1">Delizioso! Order Served!</h2>
+            <p class="text-sm text-gray-300 mb-4">You successfully completed the English Listening Challenge!</p>
+
+            <!-- Stars Earned -->
+            <div class="flex justify-center space-x-2 text-3xl mb-4 text-amber-400" id="victory-stars">
+                <i class="fa-solid fa-star"></i>
+                <i class="fa-solid fa-star"></i>
+                <i class="fa-solid fa-star"></i>
+            </div>
+
+            <!-- Score Summary -->
+            <div class="bg-black/40 rounded-xl p-3 mb-6 border border-white/10 text-sm">
+                <div class="flex justify-between mb-1">
+                    <span class="text-gray-400">Listening Accuracy:</span>
+                    <span id="accuracy-score" class="font-bold text-green-400">100%</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-gray-400">Total Points Earned:</span>
+                    <span id="points-earned" class="font-bold text-amber-300">+150 PTS</span>
+                </div>
+            </div>
+
+            <button id="next-order-btn" class="w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-bold py-3 rounded-xl shadow-lg border border-green-300 transition transform active:scale-95">
+                Next Customer Order <i class="fa-solid fa-arrow-right ml-2"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- Start Overlay / Instructions -->
+    <div id="start-overlay" class="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-b from-stone-950 via-amber-950 to-stone-900 p-4">
+        <div class="glass-panel text-white rounded-2xl max-w-lg w-full p-6 md:p-8 text-center shadow-2xl border-2 border-amber-500/50">
+            <div class="w-20 h-20 bg-amber-500/20 text-amber-400 rounded-full flex items-center justify-center mx-auto mb-4 border-2 border-amber-500/50 text-4xl">
+                <i class="fa-solid fa-pizza-slice"></i>
+            </div>
+            <h1 class="text-3xl font-extrabold text-amber-400 mb-2">Pizzeria Listening Quest</h1>
+            <p class="text-sm text-amber-100/80 mb-6">Year 4 ESL English Listening Comprehension Challenge</p>
+
+            <div class="text-left bg-black/40 rounded-xl p-4 mb-6 text-xs md:text-sm space-y-2 border border-amber-500/20">
+                <div class="font-bold text-amber-300 mb-1 flex items-center"><i class="fa-solid fa-compass mr-2"></i> How to Play:</div>
+                <p>1. <span class="text-amber-200">Listen:</span> Walk to the customer and listen carefully to their English pizza order.</p>
+                <p>2. <span class="text-amber-200">Knead & Prep:</span> Go to the Prep Counter to prepare dough and spread sauce.</p>
+                <p>3. <span class="text-amber-200">Toppings:</span> Choose exact ingredients requested by the customer.</p>
+                <p>4. <span class="text-amber-200">Bake:</span> Place pizza in the brick wood oven.</p>
+                <p>5. <span class="text-amber-200">Serve & Quiz:</span> Deliver to customer and answer English listening comprehension questions!</p>
+            </div>
+
+            <div class="text-xs text-gray-400 mb-6">
+                <strong>Controls:</strong> <span class="text-gray-200">WASD / Arrow Keys</span> to walk | <span class="text-gray-200">Mouse Drag</span> to look | <span class="text-gray-200">Left-Click / E Key</span> to interact.<br/>
+                <em>Mobile/Tablet:</em> On-screen joystick, drag screen to rotate camera, tap button to interact.
+            </div>
+
+            <button id="start-game-btn" class="w-full bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white font-bold py-4 rounded-xl shadow-xl border border-amber-300 text-lg transition transform hover:scale-105 active:scale-95">
+                <i class="fa-solid fa-play mr-2"></i> START PIZZERIA QUEST
+            </button>
+        </div>
+    </div>
+
+    <!-- MAIN JAVASCRIPT GAME LOGIC -->
+    <script>
+        // --- GAME CONFIG & STATE MANAGEMENT ---
+        const gameState = {
+            started: false,
+            score: 0,
+            step: 1, // 1: Receive Order, 2: Prep Dough/Sauce, 3: Add Toppings, 4: Bake Oven, 5: Serve & Quiz
+            difficulty: 'intermediate', // beginner, intermediate, advanced
+            soundMuted: false,
+            currentOrder: null,
+            playerPizza: {
+                doughKneaded: false,
+                sauce: null, // 'tomato', 'garlic'
+                toppings: [] // ['mozzarella', 'pepperoni', ...]
+            },
+            quizAnswers: {},
+            customerCount: 1
+        };
+
+        // Pizza ingredients database
+        const INGREDIENTS = {
+            MOZZARELLA: 'mozzarella',
+            PEPPERONI: 'pepperoni',
+            MUSHROOMS: 'mushrooms',
+            OLIVES: 'olives',
+            BELL_PEPPERS: 'bell_peppers',
+            BASIL: 'basil'
+        };
+
+        // Sample Customer Orders Pool
+        const ORDER_POOL = [
+            {
+                customerName: "Chef Marco",
+                text: "Hello! I would like a small pizza with tomato sauce, mozzarella cheese, mushrooms, and pepperoni!",
+                sauce: "tomato",
+                toppings: ["mozzarella", "mushrooms", "pepperoni"],
+                questions: [
+                    {
+                        q: "What sauce did the customer ask for?",
+                        options: ["Garlic Sauce", "Tomato Sauce", "No Sauce"],
+                        correct: 1
+                    },
+                    {
+                        q: "Which meat topping did the customer order?",
+                        options: ["Chicken", "Pepperoni", "Beef"],
+                        correct: 1
+                    },
+                    {
+                        q: "Which vegetable topping was requested?",
+                        options: ["Bell Peppers", "Olives", "Mushrooms"],
+                        correct: 2
+                    }
+                ]
+            },
+            {
+                customerName: "Sofia",
+                text: "Hi there! I want a delicious pizza with garlic sauce, mozzarella cheese, bell peppers, and fresh basil, please!",
+                sauce: "garlic",
+                toppings: ["mozzarella", "bell_peppers", "basil"],
+                questions: [
+                    {
+                        q: "What base sauce was requested?",
+                        options: ["Garlic Sauce", "Tomato Sauce", "BBQ Sauce"],
+                        correct: 0
+                    },
+                    {
+                        q: "Which green herb did Sofia request?",
+                        options: ["Basil", "Mushrooms", "Olives"],
+                        correct: 0
+                    },
+                    {
+                        q: "Did Sofia ask for pepperoni?",
+                        options: ["Yes", "No"],
+                        correct: 1
+                    }
+                ]
+            },
+            {
+                customerName: "Lucas",
+                text: "Good afternoon! Please make me a pizza with tomato sauce, mozzarella, mushrooms, olives, and pepperoni!",
+                sauce: "tomato",
+                toppings: ["mozzarella", "mushrooms", "olives", "pepperoni"],
+                questions: [
+                    {
+                        q: "How many toppings total did Lucas ask for?",
+                        options: ["2 toppings", "3 toppings", "4 toppings"],
+                        correct: 2
+                    },
+                    {
+                        q: "Which black ingredient did Lucas want?",
+                        options: ["Olives", "Bell Peppers", "Mushrooms"],
+                        correct: 0
+                    }
+                ]
+            }
+        ];
+
+        // --- WEB AUDIO API SOUND SYNTHESIZER ---
+        class SoundEngine {
+            constructor() {
+                this.ctx = null;
+                this.isMuted = false;
+                this.musicInterval = null;
+            }
+
+            init() {
+                if (!this.ctx) {
+                    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                if (this.ctx.state === 'suspended') {
+                    this.ctx.resume();
+                }
+            }
+
+            playTone(freq, type = 'sine', duration = 0.2, gainVal = 0.1) {
+                if (this.isMuted || !this.ctx) return;
+                try {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = type;
+                    osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+                    gain.gain.setValueAtTime(gainVal, this.ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + duration);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start();
+                    osc.stop(this.ctx.currentTime + duration);
+                } catch(e){}
+            }
+
+            playClick() {
+                this.playTone(600, 'sine', 0.08, 0.15);
+            }
+
+            playSquish() {
+                // Dough kneading squish synth
+                if (this.isMuted || !this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(120, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(40, this.ctx.currentTime + 0.25);
+                gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.25);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.25);
+            }
+
+            playSizzle() {
+                // Oven sizzle noise sound synth
+                if (this.isMuted || !this.ctx) return;
+                const bufferSize = this.ctx.sampleRate * 0.5;
+                const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    data[i] = Math.random() * 2 - 1;
+                }
+                const noise = this.ctx.createBufferSource();
+                noise.buffer = buffer;
+                const filter = this.ctx.createBiquadFilter();
+                filter.type = 'bandpass';
+                filter.frequency.value = 3000;
+                const gain = this.ctx.createGain();
+                gain.gain.setValueAtTime(0.15, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.5);
+                noise.connect(filter);
+                filter.connect(gain);
+                gain.connect(this.ctx.destination);
+                noise.start();
+            }
+
+            playFanfare() {
+                // Success chime notes
+                const notes = [523.25, 659.25, 783.99, 1046.50];
+                notes.forEach((freq, idx) => {
+                    setTimeout(() => {
+                        this.playTone(freq, 'triangle', 0.4, 0.2);
+                    }, idx * 120);
+                });
+            }
+
+            startCozyAccordionMusic() {
+                if (this.musicInterval) return;
+                // Simple warm Italian-style synth melody loop
+                const chords = [
+                    [261.63, 329.63, 392.00], // C Major
+                    [293.66, 349.23, 440.00], // D Minor
+                    [246.94, 293.66, 392.00], // G Major
+                    [261.63, 329.63, 392.00]  // C Major
+                ];
+                let step = 0;
+                this.musicInterval = setInterval(() => {
+                    if (this.isMuted || !this.ctx) return;
+                    const chord = chords[step % chords.length];
+                    chord.forEach(f => this.playTone(f, 'sine', 0.8, 0.03));
+                    step++;
+                }, 1600);
+            }
+        }
+
+        const soundEngine = new SoundEngine();
+
+        // --- SPEECH SYNTHESIS (VOICE ORDER ENGINE) ---
+        function speakOrderText(text) {
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel(); // Stop ongoing speech
+                const utterance = new SpeechSynthesisUtterance(text);
+                
+                // Adjust speech rate based on game difficulty
+                if (gameState.difficulty === 'beginner') {
+                    utterance.rate = 0.8;
+                } else if (gameState.difficulty === 'intermediate') {
+                    utterance.rate = 1.0;
+                } else {
+                    utterance.rate = 1.2;
+                }
+
+                // Select preferred English voice if available
+                const voices = window.speechSynthesis.getVoices();
+                const englishVoice = voices.find(v => v.lang.includes('en-US') || v.lang.includes('en-GB') || v.lang.startsWith('en'));
+                if (englishVoice) {
+                    utterance.voice = englishVoice;
+                }
+
+                window.speechSynthesis.speak(utterance);
+            }
+        }
+
+        // --- THREE.JS 3D SCENE SETUP & ENGINE ---
+        let scene, camera, renderer;
+        let interactables = []; // Interactive objects list
+        let currentTarget = null; // Object currently pointed at by reticle
+
+        // Player camera & position controls
+        const player = {
+            position: new THREE.Vector3(0, 1.6, 5), // Eyes height ~1.6m
+            rotation: new THREE.Euler(0, 0, 0, 'YXZ'),
+            speed: 0.08,
+            moveForward: false,
+            moveBackward: false,
+            moveLeft: false,
+            moveRight: false
+        };
+
+        // 3D Objects references
+        let pizzaMesh = null;
+        let ovenLight = null;
+        let customerMesh = null;
+        let doughMesh = null;
+        let toppingMeshes = [];
+
+        function init3DScene() {
+            const container = document.getElementById('canvas-container');
+
+            // Scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x1a0d0a);
+            scene.fog = new THREE.FogExp2(0x1a0d0a, 0.03);
+
+            // Camera
+            camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 50);
+            camera.rotation.order = 'YXZ';
+            camera.position.copy(player.position);
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            container.appendChild(renderer.domElement);
+
+            // Lights
+            const ambientLight = new THREE.AmbientLight(0xffecd1, 0.6);
+            scene.add(ambientLight);
+
+            const warmPizzeriaLight = new THREE.PointLight(0xffaa55, 1.2, 18);
+            warmPizzeriaLight.position.set(0, 4, 0);
+            warmPizzeriaLight.castShadow = true;
+            scene.add(warmPizzeriaLight);
+
+            // Oven Fire Light (Glowing Flickering)
+            ovenLight = new THREE.PointLight(0xff4400, 2.5, 6);
+            ovenLight.position.set(-3.5, 1.2, -4);
+            scene.add(ovenLight);
+
+            // Build Room Geometry (Checkered floor, walls, wooden counters)
+            buildPizzeriaEnvironment();
+
+            // Handle Resize
+            window.addEventListener('resize', onWindowResize, false);
+        }
+
+        // --- ENVIRONMENT ARCHITECTURE CREATOR ---
+        function buildPizzeriaEnvironment() {
+            // 1. Checkered Tile Floor
+            const floorGeo = new THREE.PlaneGeometry(16, 16);
+            // Create checkered texture programmatically
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+            const tileSize = 32;
+            for (let x = 0; x < 256; x += tileSize) {
+                for (let y = 0; y < 256; y += tileSize) {
+                    ctx.fillStyle = ((x / tileSize + y / tileSize) % 2 === 0) ? '#8b261b' : '#f5e6d3';
+                    ctx.fillRect(x, y, tileSize, tileSize);
+                }
+            }
+            const floorTexture = new THREE.CanvasTexture(canvas);
+            floorTexture.wrapS = THREE.RepeatWrapping;
+            floorTexture.wrapT = THREE.RepeatWrapping;
+            floorTexture.repeat.set(4, 4);
+
+            const floorMat = new THREE.MeshStandardMaterial({ map: floorTexture, roughness: 0.4 });
+            const floor = new THREE.Mesh(floorGeo, floorMat);
+            floor.rotation.x = -Math.PI / 2;
+            floor.receiveShadow = true;
+            scene.add(floor);
+
+            // 2. Warm Wooden Walls
+            const wallMat = new THREE.MeshStandardMaterial({ color: 0x3d2314, roughness: 0.8 });
+            
+            // Back Wall
+            const backWall = new THREE.Mesh(new THREE.PlaneGeometry(16, 6), wallMat);
+            backWall.position.set(0, 3, -8);
+            scene.add(backWall);
+
+            // Left Wall
+            const leftWall = new THREE.Mesh(new THREE.PlaneGeometry(16, 6), wallMat);
+            leftWall.position.set(-8, 3, 0);
+            leftWall.rotation.y = Math.PI / 2;
+            scene.add(leftWall);
+
+            // Right Wall
+            const rightWall = new THREE.Mesh(new THREE.PlaneGeometry(16, 6), wallMat);
+            rightWall.position.set(8, 3, 0);
+            rightWall.rotation.y = -Math.PI / 2;
+            scene.add(rightWall);
+
+            // 3. Wood-Fired Brick Oven (Left Counter Area)
+            const ovenGroup = new THREE.Group();
+            const brickMat = new THREE.MeshStandardMaterial({ color: 0x8b3a2b, roughness: 0.9 });
+            const ovenBody = new THREE.Mesh(new THREE.BoxGeometry(2.5, 2.5, 2.5), brickMat);
+            ovenBody.position.set(-6, 1.25, -5.5);
+            ovenBody.castShadow = true;
+            ovenGroup.add(ovenBody);
+
+            // Oven Interior Opening
+            const ovenMouthMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+            const ovenMouth = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.8, 0.2), ovenMouthMat);
+            ovenMouth.position.set(-5.5, 1.1, -4.24);
+            ovenGroup.add(ovenMouth);
+            scene.add(ovenGroup);
+
+            // Register Oven Station as Interactable
+            ovenBody.userData = { id: 'station_oven', name: '4. Wood Oven Station', action: 'Bake Pizza' };
+            interactables.push(ovenBody);
+
+            // 4. Pizza Preparation Counter Table (Marble Top)
+            const counterMat = new THREE.MeshStandardMaterial({ color: 0x221510, roughness: 0.5 });
+            const marbleMat = new THREE.MeshStandardMaterial({ color: 0xdedede, roughness: 0.2 });
+
+            const prepTableBase = new THREE.Mesh(new THREE.BoxGeometry(4, 0.9, 1.6), counterMat);
+            prepTableBase.position.set(0, 0.45, -4);
+            prepTableBase.castShadow = true;
+            scene.add(prepTableBase);
+
+            const prepTableTop = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.1, 1.8), marbleMat);
+            prepTableTop.position.set(0, 0.95, -4);
+            prepTableTop.receiveShadow = true;
+            scene.add(prepTableTop);
+
+            // Interactive Dough Base on Prep Table
+            const doughGeo = new THREE.CylinderGeometry(0.3, 0.35, 0.08, 24);
+            const doughMat = new THREE.MeshStandardMaterial({ color: 0xe8c89b, roughness: 0.7 });
+            doughMesh = new THREE.Mesh(doughGeo, doughMat);
+            doughMesh.position.set(-1, 1.04, -4);
+            doughMesh.userData = { id: 'station_prep', name: '2. Dough & Sauce Counter', action: 'Prepare Dough & Sauce' };
+            scene.add(doughMesh);
+            interactables.push(doughMesh);
+
+            // Pizza Base (For Toppings)
+            const pizzaGeo = new THREE.CylinderGeometry(0.45, 0.45, 0.04, 32);
+            const pizzaMat = new THREE.MeshStandardMaterial({ color: 0xd9a05b, roughness: 0.6 });
+            pizzaMesh = new THREE.Mesh(pizzaGeo, pizzaMat);
+            pizzaMesh.position.set(0.5, 1.03, -4);
+            pizzaMesh.visible = false; // Hidden until dough is kneaded
+            pizzaMesh.userData = { id: 'station_toppings', name: '3. Toppings Tray', action: 'Select Toppings' };
+            scene.add(pizzaMesh);
+            interactables.push(pizzaMesh);
+
+            // 5. Customer Dining Table & Customer Model (Right Side)
+            const customerTableGroup = new THREE.Group();
+
+            const tableLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.9), counterMat);
+            tableLeg.position.set(4.5, 0.45, -2);
+            customerTableGroup.add(tableLeg);
+
+            const tableTop = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 0.08, 32), counterMat);
+            tableTop.position.set(4.5, 0.9, -2);
+            tableTop.castShadow = true;
+            customerTableGroup.add(tableTop);
+
+            // Stylized Customer NPC Model
+            const customerBodyMat = new THREE.MeshStandardMaterial({ color: 0x2b580c });
+            const customerHeadMat = new THREE.MeshStandardMaterial({ color: 0xffdbac });
+            
+            const customerBody = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.4, 0.9, 16), customerBodyMat);
+            customerBody.position.set(4.5, 1.15, -3.1);
+            customerTableGroup.add(customerBody);
+
+            const customerHead = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 16), customerHeadMat);
+            customerHead.position.set(4.5, 1.75, -3.1);
+            customerTableGroup.add(customerHead);
+
+            // Chef / Customer Hat
+            const hatMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
+            const hat = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.22, 0.3, 16), hatMat);
+            hat.position.set(4.5, 1.95, -3.1);
+            customerTableGroup.add(hat);
+
+            scene.add(customerTableGroup);
+
+            // Customer Interaction Target
+            customerHead.userData = { id: 'customer_npc', name: '1. Customer Table', action: 'Listen / Serve Order' };
+            customerBody.userData = { id: 'customer_npc', name: '1. Customer Table', action: 'Listen / Serve Order' };
+            interactables.push(customerHead);
+            interactables.push(customerBody);
+        }
+
+        // Dynamic 3D Toppings Generator
+        function update3DPizzaVisuals() {
+            if (!pizzaMesh) return;
+
+            // Update Sauce Color
+            if (gameState.playerPizza.sauce === 'tomato') {
+                pizzaMesh.material.color.setHex(0xb8260d);
+            } else if (gameState.playerPizza.sauce === 'garlic') {
+                pizzaMesh.material.color.setHex(0xf4f1cb);
+            }
+
+            // Remove existing topping meshes
+            toppingMeshes.forEach(mesh => scene.remove(mesh));
+            toppingMeshes = [];
+
+            // Add Selected Topping Objects
+            const toppings = gameState.playerPizza.toppings;
+            toppings.forEach(topping => {
+                let color = 0xffffff;
+                let geo = new THREE.SphereGeometry(0.04, 8, 8);
+
+                if (topping === INGREDIENTS.MOZZARELLA) {
+                    color = 0xfffae6;
+                    geo = new THREE.CylinderGeometry(0.06, 0.06, 0.02, 12);
+                } else if (topping === INGREDIENTS.PEPPERONI) {
+                    color = 0x991b1b;
+                    geo = new THREE.CylinderGeometry(0.07, 0.07, 0.02, 12);
+                } else if (topping === INGREDIENTS.MUSHROOMS) {
+                    color = 0x786c5f;
+                    geo = new THREE.BoxGeometry(0.08, 0.03, 0.06);
+                } else if (topping === INGREDIENTS.OLIVES) {
+                    color = 0x1f2937;
+                    geo = new THREE.TorusGeometry(0.04, 0.02, 8, 12);
+                } else if (topping === INGREDIENTS.BELL_PEPPERS) {
+                    color = 0x16a34a;
+                    geo = new THREE.BoxGeometry(0.09, 0.02, 0.04);
+                } else if (topping === INGREDIENTS.BASIL) {
+                    color = 0x15803d;
+                    geo = new THREE.BoxGeometry(0.1, 0.01, 0.08);
+                }
+
+                const mat = new THREE.MeshStandardMaterial({ color: color });
+
+                // Scatter 6 pieces on pizza surface
+                for (let i = 0; i < 6; i++) {
+                    const angle = (i / 6) * Math.PI * 2 + Math.random() * 0.3;
+                    const dist = 0.12 + Math.random() * 0.22;
+                    const toppingMesh = new THREE.Mesh(geo, mat);
+                    toppingMesh.position.set(
+                        pizzaMesh.position.x + Math.cos(angle) * dist,
+                        pizzaMesh.position.y + 0.03,
+                        pizzaMesh.position.z + Math.sin(angle) * dist
+                    );
+                    toppingMesh.rotation.y = Math.random() * Math.PI;
+                    scene.add(toppingMesh);
+                    toppingMeshes.push(toppingMesh);
+                }
+            });
+        }
+
+        // --- GAMEWORKFLOW & OBJECTIVE UPDATER ---
+        function updateObjectiveHUD() {
+            const objectiveText = document.getElementById('objective-text');
+            const promptText = document.getElementById('prompt-text');
+
+            if (gameState.step === 1) {
+                objectiveText.innerText = "Step 1: Walk to Customer Table & Listen to Order";
+            } else if (gameState.step === 2) {
+                objectiveText.innerText = "Step 2: Knead Dough & Spread Sauce at Prep Counter";
+            } else if (gameState.step === 3) {
+                objectiveText.innerText = "Step 3: Select Requested Toppings at Toppings Tray";
+            } else if (gameState.step === 4) {
+                objectiveText.innerText = "Step 4: Bake Pizza in Wood-Fired Brick Oven";
+            } else if (gameState.step === 5) {
+                objectiveText.innerText = "Step 5: Deliver Pizza to Customer & Complete ESL Quiz";
+            }
+
+            // Subtitle visibility check
+            const subtitleBox = document.getElementById('subtitle-box');
+            if (gameState.difficulty === 'advanced') {
+                subtitleBox.classList.add('hidden'); // Audio only for advanced!
+            }
+        }
+
+        // --- INTERACTION LOGIC & MODALS ENGINE ---
+        function triggerInteraction(target) {
+            soundEngine.playClick();
+            const stationId = target.userData.id;
+
+            // STEP 1: Listen to Customer Order
+            if (stationId === 'customer_npc' && gameState.step === 1) {
+                playCurrentCustomerOrder();
+                gameState.step = 2;
+                updateObjectiveHUD();
+            }
+            // STEP 2: Prep Dough & Sauce
+            else if (stationId === 'station_prep' && gameState.step === 2) {
+                showPrepDoughModal();
+            }
+            // STEP 3: Select Toppings
+            else if (stationId === 'station_toppings' && gameState.step === 3) {
+                showToppingsModal();
+            }
+            // STEP 4: Bake Pizza in Oven
+            else if (stationId === 'station_oven' && gameState.step === 4) {
+                bakePizzaInOven();
+            }
+            // STEP 5: Serve Customer & Trigger Quiz
+            else if (stationId === 'customer_npc' && gameState.step === 5) {
+                showListeningQuizModal();
+            }
+        }
+
+        function playCurrentCustomerOrder() {
+            const order = gameState.currentOrder;
+            if (!order) return;
+
+            // Show Subtitles if not Advanced difficulty
+            if (gameState.difficulty !== 'advanced') {
+                document.getElementById('subtitle-text').innerText = `"${order.text}"`;
+                document.getElementById('subtitle-box').classList.remove('hidden');
+            }
+
+            // Read order aloud using Speech Synthesis
+            speakOrderText(order.text);
+        }
+
+        // STEP 2: Dough & Sauce Modal
+        function showPrepDoughModal() {
+            const modalHTML = `
+                <div id="temp-prep-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+                    <div class="glass-panel text-white rounded-2xl max-w-md w-full p-6 border border-amber-500/40 text-center">
+                        <h3 class="text-xl font-bold text-amber-300 mb-3"><i class="fa-solid fa-bread-slice mr-2"></i>Dough & Sauce Station</h3>
+                        <p class="text-sm text-gray-300 mb-4">First, knead the pizza dough, then choose the correct sauce requested by the customer!</p>
+                        
+                        <button id="knead-btn" class="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-3 rounded-xl mb-4 shadow transition">
+                            <i class="fa-solid fa-hand mr-2"></i>1. Knead & Flatten Dough
+                        </button>
+
+                        <div id="sauce-options" class="hidden space-y-2 mb-4">
+                            <div class="text-xs text-amber-400 font-bold mb-1">SELECT SAUCE:</div>
+                            <button onclick="selectSauce('tomato')" class="w-full bg-red-700 hover:bg-red-800 text-white font-bold py-2.5 rounded-lg transition">
+                                <i class="fa-solid fa-jar mr-2"></i>Tomato Sauce
+                            </button>
+                            <button onclick="selectSauce('garlic')" class="w-full bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2.5 rounded-lg transition">
+                                <i class="fa-solid fa-jar mr-2"></i>Garlic Sauce
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.body.insertAdjacentHTML('beforeend', modalHTML);
+
+            document.getElementById('knead-btn').addEventListener('click', () => {
+                soundEngine.playSquish();
+                gameState.playerPizza.doughKneaded = true;
+                doughMesh.visible = false;
+                pizzaMesh.visible = true;
+                document.getElementById('knead-btn').classList.add('hidden');
+                document.getElementById('sauce-options').classList.remove('hidden');
+            });
+        }
+
+        window.selectSauce = function(sauceType) {
+            soundEngine.playClick();
+            gameState.playerPizza.sauce = sauceType;
+            update3DPizzaVisuals();
+
+            const modal = document.getElementById('temp-prep-modal');
+            if (modal) modal.remove();
+
+            gameState.step = 3;
+            updateObjectiveHUD();
+        };
+
+        // STEP 3: Toppings Modal
+        function showToppingsModal() {
+            const toppingsList = [
+                { id: INGREDIENTS.MOZZARELLA, label: 'Mozzarella Cheese', icon: 'fa-cheese' },
+                { id: INGREDIENTS.PEPPERONI, label: 'Pepperoni Slices', icon: 'fa-circle' },
+                { id: INGREDIENTS.MUSHROOMS, label: 'Mushrooms', icon: 'fa-cloud' },
+                { id: INGREDIENTS.OLIVES, label: 'Black Olives', icon: 'fa-dot-circle' },
+                { id: INGREDIENTS.BELL_PEPPERS, label: 'Bell Peppers', icon: 'fa-pepper-hot' },
+                { id: INGREDIENTS.BASIL, label: 'Fresh Basil Leaves', icon: 'fa-leaf' }
+            ];
+
+            let buttonsHTML = toppingsList.map(item => {
+                const isSelected = gameState.playerPizza.toppings.includes(item.id);
+                return `
+                    <button onclick="toggleTopping('${item.id}')" id="topping-btn-${item.id}" class="p-3 rounded-xl font-bold text-sm flex items-center justify-between border ${isSelected ? 'bg-amber-500 border-amber-300 text-black' : 'bg-black/40 border-white/10 text-white hover:bg-white/10'} transition">
+                        <span><i class="fa-solid ${item.icon} mr-2"></i>${item.label}</span>
+                        <i class="fa-solid ${isSelected ? 'fa-check-circle' : 'fa-plus-circle'} text-lg"></i>
+                    </button>
+                `;
+            }).join('');
+
+            const modalHTML = `
+                <div id="temp-toppings-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+                    <div class="glass-panel text-white rounded-2xl max-w-md w-full p-6 border border-amber-500/40">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="text-xl font-bold text-amber-300"><i class="fa-solid fa-list-check mr-2"></i>Select Toppings</h3>
+                            <button id="listen-again-toppings" class="text-xs text-amber-300 bg-amber-500/20 px-2.5 py-1 rounded border border-amber-500/30">
+                                <i class="fa-solid fa-volume-high mr-1"></i>Listen
+                            </button>
+                        </div>
+                        <div class="grid grid-cols-1 gap-2 mb-6">
+                            ${buttonsHTML}
+                        </div>
+                        <button onclick="finishToppings()" class="w-full bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white font-bold py-3 rounded-xl shadow-lg border border-amber-400">
+                            Finish Adding Toppings <i class="fa-solid fa-arrow-right ml-1"></i>
+                        </button>
+                    </div>
+                </div>
+            `;
+            document.body.insertAdjacentHTML('beforeend', modalHTML);
+
+            document.getElementById('listen-again-toppings').addEventListener('click', () => {
+                speakOrderText(gameState.currentOrder.text);
+            });
+        }
+
+        window.toggleTopping = function(toppingId) {
+            soundEngine.playClick();
+            const index = gameState.playerPizza.toppings.indexOf(toppingId);
+            if (index > -1) {
+                gameState.playerPizza.toppings.splice(index, 1);
+            } else {
+                gameState.playerPizza.toppings.push(toppingId);
+            }
+            update3DPizzaVisuals();
+
+            // Refresh Toppings Modal
+            const modal = document.getElementById('temp-toppings-modal');
+            if (modal) modal.remove();
+            showToppingsModal();
+        };
+
+        window.finishToppings = function() {
+            soundEngine.playClick();
+            const modal = document.getElementById('temp-toppings-modal');
+            if (modal) modal.remove();
+
+            gameState.step = 4;
+            updateObjectiveHUD();
+        };
+
+        // STEP 4: Bake Oven Timer Animation
+        function bakePizzaInOven() {
+            soundEngine.playSizzle();
+            pizzaMesh.visible = false; // Put into oven
+
+            // Display floating timer on screen
+            const timerHTML = `
+                <div id="oven-timer-overlay" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+                    <div class="glass-panel text-white rounded-2xl p-8 text-center border-2 border-orange-500 animate-pulse">
+                        <i class="fa-solid fa-fire text-5xl text-orange-500 mb-2"></i>
+                        <h3 class="text-2xl font-bold text-amber-300 mb-1">Baking Pizza in Wood Oven...</h3>
+                        <p class="text-sm text-gray-300">Golden crispy crust in progress!</p>
+                    </div>
+                </div>
+            `;
+            document.body.insertAdjacentHTML('beforeend', timerHTML);
+
+            setTimeout(() => {
+                const timerOverlay = document.getElementById('oven-timer-overlay');
+                if (timerOverlay) timerOverlay.remove();
+
+                pizzaMesh.position.set(4, 0.95, -2); // Place baked pizza on customer table
+                pizzaMesh.visible = true;
+
+                gameState.step = 5;
+                updateObjectiveHUD();
+            }, 2500);
+        }
+
+        // STEP 5: ESL Listening Check Quiz Modal
+        function showListeningQuizModal() {
+            const order = gameState.currentOrder;
+            const container = document.getElementById('quiz-questions-container');
+            container.innerHTML = '';
+
+            order.questions.forEach((qObj, qIdx) => {
+                let optionsHTML = qObj.options.map((opt, optIdx) => `
+                    <label class="flex items-center space-x-3 bg-black/40 hover:bg-white/10 p-3 rounded-xl border border-white/10 cursor-pointer transition">
+                        <input type="radio" name="question_${qIdx}" value="${optIdx}" class="w-4 h-4 text-amber-500 focus:ring-amber-400">
+                        <span class="text-sm text-gray-200">${opt}</span>
+                    </label>
+                `).join('');
+
+                container.insertAdjacentHTML('beforeend', `
+                    <div class="bg-black/30 p-4 rounded-xl border border-amber-500/20 mb-3">
+                        <div class="text-sm font-bold text-amber-300 mb-2">${qIdx + 1}. ${qObj.q}</div>
+                        <div class="space-y-2">${optionsHTML}</div>
+                    </div>
+                `);
+            });
+
+            document.getElementById('quiz-modal').classList.remove('hidden');
+        }
+
+        // --- QUIZ EVALUATION & VICTORY SYSTEM ---
+        function evaluateQuizAndPizza() {
+            const order = gameState.currentOrder;
+            let correctCount = 0;
+            let totalQuestions = order.questions.length;
+
+            order.questions.forEach((qObj, qIdx) => {
+                const selected = document.querySelector(`input[name="question_${qIdx}"]:checked`);
+                if (selected && parseInt(selected.value) === qObj.correct) {
+                    correctCount++;
+                }
+            });
+
+            // Check Pizza Accuracy
+            let pizzaAccurate = true;
+            if (gameState.playerPizza.sauce !== order.sauce) pizzaAccurate = false;
+            
+            // Check if toppings match
+            const requiredToppings = order.toppings.sort();
+            const playerToppings = [...gameState.playerPizza.toppings].sort();
+            if (JSON.stringify(requiredToppings) !== JSON.stringify(playerToppings)) {
+                pizzaAccurate = false;
+            }
+
+            const accuracyPercentage = Math.round((correctCount / totalQuestions) * 100);
+            let starsEarned = 1;
+            if (accuracyPercentage >= 100 && pizzaAccurate) starsEarned = 3;
+            else if (accuracyPercentage >= 50) starsEarned = 2;
+
+            const points = (starsEarned * 50) + (accuracyPercentage * 1);
+            gameState.score += points;
+            document.getElementById('score-display').innerText = gameState.score;
+
+            // Show Victory Modal
+            document.getElementById('quiz-modal').classList.add('hidden');
+            document.getElementById('accuracy-score').innerText = `${accuracyPercentage}%`;
+            document.getElementById('points-earned').innerText = `+${points} PTS`;
+
+            const victoryStars = document.getElementById('victory-stars');
+            victoryStars.innerHTML = '';
+            for (let i = 0; i < 3; i++) {
+                if (i < starsEarned) {
+                    victoryStars.insertAdjacentHTML('beforeend', '<i class="fa-solid fa-star text-amber-400"></i>');
+                } else {
+                    victoryStars.insertAdjacentHTML('beforeend', '<i class="fa-regular fa-star text-gray-500"></i>');
+                }
+            }
+
+            soundEngine.playFanfare();
+            document.getElementById('victory-modal').classList.remove('hidden');
+        }
+
+        // Start Next Order Loop
+        function setupNextOrder() {
+            document.getElementById('victory-modal').classList.add('hidden');
+
+            // Pick next order from pool
+            const orderIndex = gameState.customerCount % ORDER_POOL.length;
+            gameState.currentOrder = ORDER_POOL[orderIndex];
+            gameState.customerCount++;
+
+            // Reset player pizza state
+            gameState.playerPizza = {
+                doughKneaded: false,
+                sauce: null,
+                toppings: []
+            };
+
+            // Reset 3D object positions & visibility
+            doughMesh.visible = true;
+            pizzaMesh.visible = false;
+            pizzaMesh.position.set(0.5, 1.03, -4);
+            update3DPizzaVisuals();
+
+            gameState.step = 1;
+            updateObjectiveHUD();
+        }
+
+        // --- INPUT & CONTROLS SYSTEM ---
+        function setupControls() {
+            // Keyboard Controls
+            window.addEventListener('keydown', (e) => {
+                if (!gameState.started) return;
+                switch (e.code) {
+                    case 'KeyW': case 'ArrowUp': player.moveForward = true; break;
+                    case 'KeyS': case 'ArrowDown': player.moveBackward = true; break;
+                    case 'KeyA': case 'ArrowLeft': player.moveLeft = true; break;
+                    case 'KeyD': case 'ArrowRight': player.moveRight = true; break;
+                    case 'KeyE': 
+                        if (currentTarget) triggerInteraction(currentTarget); 
+                        break;
+                }
+            });
+
+            window.addEventListener('keyup', (e) => {
+                switch (e.code) {
+                    case 'KeyW': case 'ArrowUp': player.moveForward = false; break;
+                    case 'KeyS': case 'ArrowDown': player.moveBackward = false; break;
+                    case 'KeyA': case 'ArrowLeft': player.moveLeft = false; break;
+                    case 'KeyD': case 'ArrowRight': player.moveRight = false; break;
+                }
+            });
+
+            // Mouse Look Controls (Pointer Lock or Drag)
+            let isDraggingMouse = false;
+            let previousMouseX = 0;
+            let previousMouseY = 0;
+
+            renderer.domElement.addEventListener('mousedown', (e) => {
+                isDraggingMouse = true;
+                previousMouseX = e.clientX;
+                previousMouseY = e.clientY;
+            });
+
+            window.addEventListener('mouseup', () => isDraggingMouse = false);
+
+            window.addEventListener('mousemove', (e) => {
+                if (!gameState.started || !isDraggingMouse) return;
+                const deltaX = e.clientX - previousMouseX;
+                const deltaY = e.clientY - previousMouseY;
+
+                player.rotation.y -= deltaX * 0.003;
+                player.rotation.x -= deltaY * 0.003;
+                player.rotation.x = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, player.rotation.x));
+
+                previousMouseX = e.clientX;
+                previousMouseY = e.clientY;
+            });
+
+            // Touch Look Controls (Right Side Screen Drag for Tablets / Mobile)
+            const touchLookZone = document.getElementById('touch-look-zone');
+            let lastTouchX = 0;
+            let lastTouchY = 0;
+
+            touchLookZone.addEventListener('touchstart', (e) => {
+                if (e.touches.length > 0) {
+                    lastTouchX = e.touches[0].clientX;
+                    lastTouchY = e.touches[0].clientY;
+                }
+            });
+
+            touchLookZone.addEventListener('touchmove', (e) => {
+                if (e.touches.length > 0) {
+                    const touchX = e.touches[0].clientX;
+                    const touchY = e.touches[0].clientY;
+
+                    const deltaX = touchX - lastTouchX;
+                    const deltaY = touchY - lastTouchY;
+
+                    player.rotation.y -= deltaX * 0.005;
+                    player.rotation.x -= deltaY * 0.005;
+                    player.rotation.x = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, player.rotation.x));
+
+                    lastTouchX = touchX;
+                    lastTouchY = touchY;
+                }
+            });
+
+            // Action Button for Mobile / Touch
+            document.getElementById('action-btn').addEventListener('click', () => {
+                if (currentTarget) triggerInteraction(currentTarget);
+            });
+        }
+
+        // Raycasting for Interaction Target
+        const raycaster = new THREE.Raycaster();
+        const centerVector = new THREE.Vector2(0, 0);
+
+        function checkRaycastInteraction() {
+            raycaster.setFromCamera(centerVector, camera);
+            const intersects = raycaster.intersectObjects(interactables, false);
+
+            const reticle = document.getElementById('reticle');
+            const interactionPrompt = document.getElementById('interaction-prompt');
+            const promptText = document.getElementById('prompt-text');
+
+            if (intersects.length > 0 && intersects[0].distance < 3.5) {
+                currentTarget = intersects[0].object;
+                reticle.classList.add('active');
+                
+                const actionName = currentTarget.userData.action || 'Interact';
+                const stationName = currentTarget.userData.name || 'Station';
+                promptText.innerText = `${stationName} - ${actionName}`;
+                interactionPrompt.classList.remove('hidden');
+            } else {
+                currentTarget = null;
+                reticle.classList.remove('active');
+                interactionPrompt.classList.add('hidden');
+            }
+        }
+
+        // --- MAIN GAME ANIMATION LOOP ---
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if (gameState.started) {
+                // Movement Vector Calculations
+                const moveVector = new THREE.Vector3();
+                if (player.moveForward) moveVector.z -= 1;
+                if (player.moveBackward) moveVector.z += 1;
+                if (player.moveLeft) moveVector.x -= 1;
+                if (player.moveRight) moveVector.x += 1;
+
+                moveVector.normalize();
+                moveVector.applyEuler(new THREE.Euler(0, player.rotation.y, 0));
+                moveVector.multiplyScalar(player.speed);
+
+                player.position.add(moveVector);
+
+                // Simple Room Boundary Collision Clamp
+                player.position.x = Math.max(-6.5, Math.min(6.5, player.position.x));
+                player.position.z = Math.max(-6.5, Math.min(6.5, player.position.z));
+
+                // Update Camera
+                camera.position.copy(player.position);
+                camera.rotation.copy(player.rotation);
+
+                // Check Raycast Intersections
+                checkRaycastInteraction();
+
+                // Flickering Wood Oven Light Animation
+                if (ovenLight) {
+                    ovenLight.intensity = 2.0 + Math.sin(Date.now() * 0.01) * 0.5;
+                }
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // --- DOM INITIALIZATION & EVENT BINDINGS ---
+        window.onload = function() {
+            init3DScene();
+            setupControls();
+
+            // Set Initial Order
+            gameState.currentOrder = ORDER_POOL[0];
+
+            // UI Listeners
+            document.getElementById('start-game-btn').addEventListener('click', () => {
+                soundEngine.init();
+                soundEngine.startCozyAccordionMusic();
+                gameState.started = true;
+                document.getElementById('start-overlay').classList.add('hidden');
+                updateObjectiveHUD();
+            });
+
+            document.getElementById('difficulty-select').addEventListener('change', (e) => {
+                gameState.difficulty = e.target.value;
+                updateObjectiveHUD();
+            });
+
+            document.getElementById('replay-voice-btn').addEventListener('click', () => {
+                playCurrentCustomerOrder();
+            });
+
+            document.getElementById('modal-replay-audio').addEventListener('click', () => {
+                playCurrentCustomerOrder();
+            });
+
+            document.getElementById('toggle-music-btn').addEventListener('click', () => {
+                soundEngine.isMuted = !soundEngine.isMuted;
+                const icon = document.getElementById('music-icon');
+                if (soundEngine.isMuted) {
+                    icon.className = 'fa-solid fa-volume-xmark text-red-400';
+                } else {
+                    icon.className = 'fa-solid fa-music text-gray-300';
+                }
+            });
+
+            document.getElementById('submit-quiz-btn').addEventListener('click', () => {
+                evaluateQuizAndPizza();
+            });
+
+            document.getElementById('next-order-btn').addEventListener('click', () => {
+                setupNextOrder();
+            });
+
+            // Start Render Loop
+            animate();
+        };
+    </script>
+</body>
+</html>
